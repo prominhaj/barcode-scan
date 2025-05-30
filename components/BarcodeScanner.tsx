@@ -1,53 +1,78 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import { BrowserMultiFormatReader } from '@zxing/browser';
+import {
+    BrowserMultiFormatReader,
+    BarcodeFormat
+} from '@zxing/browser';
+import { DecodeHintType } from '@zxing/library';
 
-interface BarcodeScannerProps {
+interface Props {
     onDetected: (result: string) => void;
 }
 
-const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onDetected }) => {
+const BarcodeScanner: React.FC<Props> = ({ onDetected }) => {
     const videoRef = useRef<HTMLVideoElement>(null);
+    const [scanning, setScanning] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [loading, setLoading] = useState(true);
 
     useEffect(() => {
         const codeReader = new BrowserMultiFormatReader();
-        let selectedDeviceId: string;
+
+        // Optional: Improve detection with hints
+        const hints = new Map();
+        hints.set(DecodeHintType.POSSIBLE_FORMATS, [
+            BarcodeFormat.CODE_128,
+            BarcodeFormat.CODE_39,
+            BarcodeFormat.EAN_13,
+            BarcodeFormat.EAN_8,
+            BarcodeFormat.UPC_A,
+            BarcodeFormat.UPC_E,
+            BarcodeFormat.QR_CODE
+        ]);
 
         BrowserMultiFormatReader.listVideoInputDevices()
-            .then((videoInputDevices) => {
-                if (videoInputDevices.length === 0) {
-                    throw new Error('No camera found');
-                }
+            .then((devices) => {
+                if (!devices.length) throw new Error('No camera devices found');
 
-                selectedDeviceId = videoInputDevices[0].deviceId;
+                // Prefer rear camera if available
+                const backCamera = devices.find((d) =>
+                    /back|rear|environment/i.test(d.label)
+                );
+                const deviceId = backCamera?.deviceId || devices[0].deviceId;
 
-                codeReader.decodeFromVideoDevice(
-                    selectedDeviceId,
-                    videoRef.current!,
-                    (result, error) => {
-                        if (result) {
-                            onDetected(result.getText());
+                codeReader
+                    .decodeFromVideoDevice(
+                        deviceId,
+                        videoRef.current!,
+                        (result, err) => {
+                            setLoading(false);
 
-                            // Safely stop scanning
-                            if ('reset' in codeReader && typeof codeReader.reset === 'function') {
-                                codeReader.reset();
-                            } else {
-                                console.warn('Unable to stop scanner; no reset method');
+                            if (result) {
+                                setScanning(false);
+                                onDetected(result.getText());
+
+                                // Stop scanning
+                                if ('reset' in codeReader && typeof codeReader.reset === 'function') {
+                                    codeReader.reset();
+                                }
+                            } else if (err && err.name !== 'NotFoundException') {
+                                console.warn('Scan error', err);
                             }
                         }
-
-                        if (error && !(error.name === 'NotFoundException')) {
-                            console.error('Scan error', error);
-                        }
-                    }
-                );
+                    )
+                    .catch((e) => {
+                        console.error(e);
+                        setError('Failed to start video decoding');
+                    });
             })
-            .catch((err: any) => setError(err.message));
+            .catch((e) => {
+                console.error(e);
+                setError('No accessible video input devices');
+            });
 
         return () => {
-            // Cleanup on unmount
             if ('reset' in codeReader && typeof codeReader.reset === 'function') {
                 codeReader.reset();
             }
@@ -55,9 +80,18 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onDetected }) => {
     }, [onDetected]);
 
     return (
-        <div>
+        <div className="flex flex-col items-center justify-center">
+            {loading && <p className="text-sm text-gray-500 mb-2">Loading camera...</p>}
             {error && <p className="text-red-500">{error}</p>}
-            <video ref={videoRef} style={{ width: '100%', height: 'auto' }} />
+            <video
+                ref={videoRef}
+                style={{ width: '100%', maxWidth: '500px', borderRadius: '8px' }}
+                autoPlay
+                muted
+            />
+            {!scanning && (
+                <p className="text-green-600 font-medium mt-2">✅ Code scanned!</p>
+            )}
         </div>
     );
 };
