@@ -1,21 +1,20 @@
 'use client';
 
-import BarcodeScanner from '@/components/BarcodeScanner';
 import { useState } from 'react';
+import BarcodeScanner from '@/components/BarcodeScanner';
 
 export default function ScanPage() {
-  const [scannedCode, setScannedCode] = useState<string | null>(null);
+  const [result, setResult] = useState<string | null>(null);
 
   return (
     <div className="p-4">
-      <h1 className="text-2xl font-bold mb-4">📦 Scan Product Code</h1>
-
-      {!scannedCode ? (
-        <BarcodeScanner onDetected={(result) => setScannedCode(result)} />
+      <h1 className="text-xl font-bold mb-2">📦 Scan Product Code</h1>
+      {!result ? (
+        <BarcodeScanner onDetected={(code) => setResult(code)} />
       ) : (
         <div className="bg-green-100 text-green-800 p-4 rounded">
-          <p>✅ Scanned Result:</p>
-          <pre className="text-lg">{scannedCode}</pre>
+          <p>✅ Detected Code:</p>
+          <pre className="text-lg">{result}</pre>
         </div>
       )}
     </div>

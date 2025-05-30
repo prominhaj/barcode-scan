@@ -1,97 +1,68 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import {
-    BrowserMultiFormatReader,
-    BarcodeFormat
-} from '@zxing/browser';
-import { DecodeHintType } from '@zxing/library';
+import Quagga from 'quagga'; // Quagga works best for barcodes only
 
 interface Props {
     onDetected: (result: string) => void;
 }
 
 const BarcodeScanner: React.FC<Props> = ({ onDetected }) => {
-    const videoRef = useRef<HTMLVideoElement>(null);
-    const [scanning, setScanning] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [loading, setLoading] = useState(true);
+    const [scanning, setScanning] = useState(true);
+    const videoRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
-        const codeReader = new BrowserMultiFormatReader();
+        if (!videoRef.current) return;
 
-        // Optional: Improve detection with hints
-        const hints = new Map();
-        hints.set(DecodeHintType.POSSIBLE_FORMATS, [
-            BarcodeFormat.CODE_128,
-            BarcodeFormat.CODE_39,
-            BarcodeFormat.EAN_13,
-            BarcodeFormat.EAN_8,
-            BarcodeFormat.UPC_A,
-            BarcodeFormat.UPC_E,
-            BarcodeFormat.QR_CODE
-        ]);
+        Quagga.init(
+            {
+                inputStream: {
+                    name: 'Live',
+                    type: 'LiveStream',
+                    target: videoRef.current,
+                    constraints: {
+                        facingMode: 'environment' // rear camera
+                    }
+                },
+                decoder: {
+                    readers: ['ean_reader', 'code_128_reader', 'code_39_reader', 'upc_reader']
+                },
+                locate: true
+            },
+            (err: any) => {
+                if (err) {
+                    console.error(err);
+                    setError('Camera initialization failed');
+                    return;
+                }
+                Quagga.start();
+            }
+        );
 
-        BrowserMultiFormatReader.listVideoInputDevices()
-            .then((devices) => {
-                if (!devices.length) throw new Error('No camera devices found');
-
-                // Prefer rear camera if available
-                const backCamera = devices.find((d) =>
-                    /back|rear|environment/i.test(d.label)
-                );
-                const deviceId = backCamera?.deviceId || devices[0].deviceId;
-
-                codeReader
-                    .decodeFromVideoDevice(
-                        deviceId,
-                        videoRef.current!,
-                        (result, err) => {
-                            setLoading(false);
-
-                            if (result) {
-                                setScanning(false);
-                                onDetected(result.getText());
-
-                                // Stop scanning
-                                if ('reset' in codeReader && typeof codeReader.reset === 'function') {
-                                    codeReader.reset();
-                                }
-                            } else if (err && err.name !== 'NotFoundException') {
-                                console.warn('Scan error', err);
-                            }
-                        }
-                    )
-                    .catch((e) => {
-                        console.error(e);
-                        setError('Failed to start video decoding');
-                    });
-            })
-            .catch((e) => {
-                console.error(e);
-                setError('No accessible video input devices');
-            });
+        Quagga.onDetected((data: any) => {
+            const code = data.codeResult.code;
+            if (code) {
+                setScanning(false);
+                onDetected(code);
+                Quagga.stop();
+            }
+        });
 
         return () => {
-            if ('reset' in codeReader && typeof codeReader.reset === 'function') {
-                codeReader.reset();
-            }
+            Quagga.offDetected(() => { });
+            Quagga.stop();
         };
     }, [onDetected]);
 
     return (
-        <div className="flex flex-col items-center justify-center">
-            {loading && <p className="text-sm text-gray-500 mb-2">Loading camera...</p>}
-            {error && <p className="text-red-500">{error}</p>}
-            <video
+        <div className="flex flex-col items-center">
+            {error && <p className="text-red-600">{error}</p>}
+            {scanning && <p className="text-sm text-gray-500 mb-2">Scanning for barcode...</p>}
+            <div
                 ref={videoRef}
-                style={{ width: '100%', maxWidth: '500px', borderRadius: '8px' }}
-                autoPlay
-                muted
+                style={{ width: '100%', maxWidth: '500px', height: 'auto' }}
             />
-            {!scanning && (
-                <p className="text-green-600 font-medium mt-2">✅ Code scanned!</p>
-            )}
         </div>
     );
 };
